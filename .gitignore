@@ -26,3 +26,5 @@ Thumbs.db
 # Scripts de prueba y auditoría local
 audit_words.py
 test_compragamer.py
+audit_db.py
+bkp.py

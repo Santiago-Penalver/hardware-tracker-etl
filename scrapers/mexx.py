@@ -6,7 +6,8 @@ import time
 import random
 from datetime import datetime
 from fake_useragent import UserAgent
-from utils import es_producto_valido
+from utils import es_producto_valido, detectar_marca, categorizar_producto
+
 
 # Diccionario de rubros de Mexx
 CATEGORIAS = {
@@ -26,7 +27,7 @@ CATEGORIAS = {
 }
 
 
-def actualizar_precios_lista():
+def actualizar_mexx():
     fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     contador = 0
     ua = UserAgent()
@@ -81,8 +82,6 @@ def actualizar_precios_lista():
                         tag_price = prod.find("h3") or prod.find(class_=lambda x: x and 'price' in x)
 
                         if tag_name and tag_price:
-                            # Asignación por defecto
-                            marca_detectada = "Genérica"
 
                             nombre = tag_name.text.strip()
                             precio_real = tag_price.text.replace("$", "").replace(".", "").replace(",", ".").strip()
@@ -92,61 +91,21 @@ def actualizar_precios_lista():
                             except ValueError:
                                 precio = 0.0
 
-                            # --- EXTRACTOR DE MARCA 2.0 ---
-                            nombre_lower = nombre.lower()
-                            marca_detectada = None
-
-                            # Fabricantes
-                            fabricantes_map = {
-                                "asus": "Asus",
-                                "gigabyte": "Gigabyte",
-                                "aorus": "Gigabyte",
-                                "msi": "MSI",
-                                "asrock": "Asrock",
-                                "redragon": "Redragon",
-                                "logitech": "Logitech",
-                                "razer": "Razer",
-                                "corsair": "Corsair",
-                                "hyperx": "HyperX",
-                                "kingston": "Kingston",
-                                "patriot": "Patriot",
-                                "crucial": "Crucial",
-                                "adata": "Adata / XPG",
-                                "xpg": "Adata / XPG",
-                                "vsg": "VSG",
-                                "viewsonic": "ViewSonic",
-                                "samsung": "Samsung",
-                                "lg": "LG"
-                            }
-
-                            for clave, nombre_oficial in fabricantes_map.items():
-                                if clave in nombre_lower:
-                                    marca_detectada = nombre_oficial
-                                    break
-
-                            # Procesadores y Placas de video (Chipsets)
-                            if not marca_detectada:
-                                if "intel" in nombre_lower:
-                                    marca_detectada = "Intel"
-                                elif "amd" in nombre_lower:
-                                    marca_detectada = "AMD"
-                                elif "nvidia" in nombre_lower:
-                                    marca_detectada = "Nvidia"
-                                else:
-                                    marca_detectada = "Genérica"
-
-                            marca = marca_detectada
-                            # Todo este proceso para que no mezcle las marcas de Mothers y Procesadores principalmente
-
+                            # 1. Validamos que sea un producto útil
                             if not es_producto_valido(nombre, precio):
-                                continue 
+                                continue
+
+                            # 2. Detectamos la marca (utilizando la función modularizada en utils.py)
+                            marca = detectar_marca(nombre)
+
+                            categoria = categorizar_producto(nombre_producto=nombre, categoria_original=nombre_cat)
 
                             cursor.execute(
                                 "INSERT INTO precios_lista (nombre, precio, marca, fecha, categoria, tienda) VALUES (?, ?, ?, ?, ?, ?)",
-                                (nombre, precio, marca, fecha_hoy, nombre_cat, "Mexx")
+                                (nombre, precio, marca, fecha_hoy, categoria, "Mexx")
                             )
                             contador += 1
-                            print(f"Guardado {nombre[:40]}... | ${precio} [{nombre_cat}]")
+                            print(f"Guardado {nombre[:40]}... | ${precio} [{marca} - {categoria}]")
 
                     conexion.commit()
 
@@ -159,7 +118,7 @@ def actualizar_precios_lista():
                     conexion.close()
                     return False
                 elif respuesta.status_code == 404:
-                    print("Servidor no encontrado (404).")
+                    print("Servidor no encontrado (404 Not found).")
                     break
                 else:
                     print(f"Error de conexión con el servidor. Código de estado: {respuesta.status_code}")
@@ -167,7 +126,7 @@ def actualizar_precios_lista():
                     return False
 
             except Exception as e:
-                print(f"Error en el Backend: {e}")
+                print(f"Error en el scraper (Mexx): {e}")
                 conexion.close()
                 return False
 
@@ -180,4 +139,4 @@ def actualizar_precios_lista():
 
 if __name__ == '__main__':
     print("Iniciando el script manualmente...")
-    actualizar_precios_lista()
+    actualizar_mexx()

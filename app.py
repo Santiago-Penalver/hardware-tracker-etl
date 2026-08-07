@@ -110,7 +110,7 @@ def index():
         total_otros=total_otros,
         marca_actual=marca_indicada,
         categoria_actual=categoria_indicada,
-        tienda_actual=tienda_indicada,
+        tienda_actual=tienda_indicada
     )
 
 
@@ -154,13 +154,9 @@ def filtrar_productos():
 
     # Filtro de Categoría
     if categoria_indicada != "Todo":
-        if categoria_indicada == "Periféricos":
-            query_base += (
-                " AND categoria IN ('Teclados y Mouses', 'Audio y Microfonos')"
-            )
-        else:
-            query_base += " AND categoria = ?"
-            params.append(categoria_indicada)
+        cat_limpia = categoria_indicada.lower().strip()
+        query_base += " AND LOWER(categoria) = ?"
+        params.append(cat_limpia)
 
     cursor.execute(f"SELECT COUNT(*) {query_base}", params)
     total_productos = cursor.fetchone()[0]
@@ -182,10 +178,10 @@ def filtrar_productos():
         total_paginas=total_paginas,
         marca_actual=marca_indicada,
         categoria_actual=categoria_indicada,
-        tienda_actual=tienda_indicada,
+        tienda_actual=tienda_indicada
     )
 
-
+# ID del producto:
 @app.route("/detalle/<int:producto_id>")
 def producto_seleccionado(producto_id):
     conexion = sqlite3.connect("hardware_tracker.db")
@@ -203,7 +199,7 @@ def producto_seleccionado(producto_id):
         return render_template("producto_detalle.html", prod=producto)
     return "<p class='text-gray-400 p-4'>Producto no encontrado</p>"
 
-
+# Vaciar. No funcionaba el htmx para cerrar ventana individual así que para eso está sencilla función.
 @app.route("/vaciar")
 def vaciar_detalle():
     return ""
