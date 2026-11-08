@@ -2,7 +2,7 @@ name: CI Python Pytest
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "feature/*" ]
   pull_request:
     branches: [ "main", "master" ]
 
@@ -10,7 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Definimos un servicio de PostgreSQL para que los tests que interactúan con la BD corran de verdad
+    # Definimos un servicio de PostgreSQL nativo en GitHub Actions
     services:
       postgres:
         image: postgres:15-alpine
@@ -27,13 +27,14 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: 📥 Clonar repositorio
+      - name: 🐙 Clonar repositorio
         uses: actions/checkout@v4
 
-      - name: 🐍 Configurar Python
+      - name: ⚙️ Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14-slim' # O la versión estable que uses en tu Dockerfile
+          python-version: '3.14'
+          architecture: 'x64'
           cache: 'pip'
 
       - name: 📦 Instalar dependencias
@@ -42,12 +43,14 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: 🧪 Ejecutar pruebas con Pytest
+      - name: 🚀 Ejecutar migraciones y pruebas con Pytest
         env:
           DB_USER: test_user
           DB_PASSWORD: test_password
           DB_HOST: localhost
           DB_PORT: 5432
           DB_NAME: test_db
+          DATABASE_URL: postgresql+psycopg2://test_user:test_password@localhost:5432/test_db
         run: |
-          pytest -v
+          python -m alembic upgrade head
+          python -m pytest -v
