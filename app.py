@@ -1,26 +1,22 @@
+import os
 import math
-import sqlite3
-from flask import Flask, render_template, request
+
+from datetime import datetime
+from flask import Flask, render_template, request, jsonify
+from scrapers.database import db, PrecioLista, HistorialPrecio
 
 app = Flask(__name__)
 
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
+db_host = os.getenv("DB_HOST")
+db_port =  os.getenv("DB_PORT")
+db_name =  os.getenv("DB_NAME")
 
-def productos_tracker_db():
-    try:
-        conexion = sqlite3.connect("hardware_tracker.db")
-        conexion.row_factory = sqlite3.Row
-        cursor = conexion.cursor()
+app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-        cursor.execute(
-            "SELECT id, nombre, precio, marca, fecha, categoria, tienda FROM precios_lista ORDER BY precio ASC"
-        )
-        productos = cursor.fetchall()
-
-        conexion.close()
-        return productos
-    except sqlite3.OperationalError:
-        return []
-
+db.init_app(app)
 
 @app.route("/")
 def index():
@@ -31,73 +27,69 @@ def index():
     por_pagina = 12
     offset = 0
 
-    conexion = sqlite3.connect("hardware_tracker.db")
-    conexion.row_factory = sqlite3.Row
-    cursor = conexion.cursor()
+    ultimo_prod = PrecioLista.query.order_by(PrecioLista.fecha_actualizacion.desc()).first()
+    timestamp_db = ultimo_prod.fecha_actualizacion if ultimo_prod else None
 
-    query_base = "FROM precios_lista WHERE 1=1"
+    if timestamp_db:
+        iso_timestamp = timestamp_db.replace(" ", "T")
+    else:
+        iso_timestamp = datetime.now().isoformat()
+
+    query_base = PrecioLista.query
 
     # Total general
-    cursor.execute(f"SELECT COUNT(*) {query_base}")
-    total_productos = cursor.fetchone()[0]
-    total_paginas = (
-        math.ceil(total_productos / por_pagina) if total_productos > 0 else 1
-    )
+    total_productos = query_base.count()
+    total_paginas = math.ceil(total_productos / por_pagina) if total_productos > 0 else 1
 
     # --- Totales específicos por marca/categoría ---
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(nombre) LIKE '%ryzen%' OR LOWER(marca) LIKE '%amd%'"
-    )
-    total_amd = cursor.fetchone()[0]
+    
+    total_amd = PrecioLista.query.filter(
+        db.or_(db.func.lower(PrecioLista.nombre).like('%ryzen%'), db.func.lower(PrecioLista.marca).like('%amd%'))
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(nombre) LIKE '%intel%' OR LOWER(nombre) LIKE '%core%'"
-    )
-    total_intel = cursor.fetchone()[0]
+    total_intel = PrecioLista.query.filter(
+        db.or_(db.func.lower(PrecioLista.nombre).like('%intel%'), db.func.lower(PrecioLista.nombre).like('%core%'))
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(marca) LIKE '%asus%' OR LOWER(nombre) LIKE '%asus%'"
-    )
-    total_asus = cursor.fetchone()[0]
+    total_asus = PrecioLista.query.filter(
+        db.or_(db.func.lower(PrecioLista.marca).like('%asus%'), db.func.lower(PrecioLista.nombre).like('%asus%'))
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(marca) LIKE '%gigabyte%' OR LOWER(nombre) LIKE '%aorus%' OR LOWER(nombre) LIKE '%gigabyte%'"
-    )
-    total_gigabyte = cursor.fetchone()[0]
+    total_gigabyte = PrecioLista.query.filter(
+        db.or_(db.func.lower(PrecioLista.marca).like('%gigabyte%'), db.func.lower(PrecioLista.marca).like('%aorus%'))
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(marca) LIKE '%msi%' OR LOWER(nombre) LIKE '%msi%'"
-    )
-    total_msi = cursor.fetchone()[0]
+    total_msi = PrecioLista.query.filter(
+        db.func.lower(PrecioLista.marca).like('%msi%')
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(marca) LIKE '%kingston%' OR LOWER(marca) LIKE '%hyperx%'"
-    )
-    total_kingston = cursor.fetchone()[0]
+    total_kingston = PrecioLista.query.filter(
+        db.or_(db.func.lower(PrecioLista.marca).like('%kingston%'), db.func.lower(PrecioLista.marca).like('%hyperx%'))
+    ).count()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM precios_lista WHERE LOWER(marca) LIKE '%razer%' OR LOWER(marca) LIKE '%logitech%' OR LOWER(marca) LIKE '%redragon%'"
-    )
-    total_perifericos_marcas = cursor.fetchone()[0]
+    total_perifericos_marcas = PrecioLista.query.filter(
+        db.or_(
+            db.func.lower(PrecioLista.marca).like('%razer%'),
+            db.func.lower(PrecioLista.marca).like('%logitech%'),
+            db.func.lower(PrecioLista.marca).like('%redragon%')
+        )
+    ).count()
 
-    cursor.execute("""
-        SELECT COUNT(*) FROM precios_lista 
-        WHERE LOWER(marca) NOT IN ('amd', 'intel', 'asus', 'gigabyte', 'msi', 'kingston', 'hyperx')
-        AND LOWER(nombre) NOT LIKE '%ryzen%'
-        AND LOWER(nombre) NOT LIKE '%intel%'
-    """)
-    total_otros = cursor.fetchone()[0]
+    # Total otros (marcas que no sean ninguna de las principales)
+    total_otros = PrecioLista.query.filter(
+        ~db.func.lower(PrecioLista.marca).in_(['amd', 'intel', 'asus', 'gigabyte', 'msi', 'kingston', 'hyperx']),
+        ~db.func.lower(PrecioLista.nombre).like('%ryzen%'),
+        ~db.func.lower(PrecioLista.nombre).like('%intel%')
+    ).count()
 
     # Productos paginados con la columna tienda incluida
-    query_final = f"SELECT id, nombre, precio, marca, fecha, categoria, tienda {query_base} ORDER BY precio ASC LIMIT ? OFFSET ?"
-    cursor.execute(query_final, (por_pagina, offset))
-    productos = cursor.fetchall()
-    conexion.close()
+    productos = query_base.order_by(PrecioLista.precio.asc()).offset(offset).limit(por_pagina).all()
 
     return render_template(
         "index.html",
         productos=productos,
         pagina_actual=pagina,
+        sync_time=iso_timestamp,
         total_paginas=total_paginas,
         total_productos=total_productos,
         total_amd=total_amd,
@@ -125,51 +117,35 @@ def filtrar_productos():
     por_pagina = 12
     offset = (pagina - 1) * por_pagina
 
-    conexion = sqlite3.connect("hardware_tracker.db")
-    conexion.row_factory = sqlite3.Row
-    cursor = conexion.cursor()
-
-    query_base = "FROM precios_lista WHERE 1=1"
-    params = []
+    query = PrecioLista.query
 
     # Filtro de Tienda
     if tienda_indicada != "Todo":
-        query_base += " AND LOWER(tienda) = ?"
-        params.append(tienda_indicada.lower().strip())
+        query = query.filter(db.func.lower(PrecioLista.tienda) == tienda_indicada.lower().strip())
 
     # Filtro de Marca
     if marca_indicada != "Todo":
         marca_clean = marca_indicada.lower().strip()
         if "adata" in marca_clean or "xpg" in marca_clean:
-            query_base += " AND (LOWER(marca) LIKE '%adata%' OR LOWER(marca) LIKE '%xpg%')"
+            query = query.filter(db.or_(db.func.lower(PrecioLista.marca).like('%adata%'), db.func.lower(PrecioLista.marca).like('%xpg%')))
         elif "gigabyte" in marca_clean or "aorus" in marca_clean:
-            query_base += " AND (LOWER(marca) LIKE '%gigabyte%' OR LOWER(marca) LIKE '%aorus%')"
+            query = query.filter(db.or_(db.func.lower(PrecioLista.marca).like('%gigabyte%'), db.func.lower(PrecioLista.marca).like('%aorus%')))
         elif "hyperx" in marca_clean:
-            query_base += " AND LOWER(marca) LIKE '%hyperx%'"
+            query = query.filter(db.func.lower(PrecioLista.marca).like('%hyperx%'))
         elif "kingston" in marca_clean:
-            query_base += " AND LOWER(marca) LIKE '%kingston%'"
+            query = query.filter(db.func.lower(PrecioLista.marca).like('%kingston%'))
         else:
-            query_base += " AND LOWER(marca) = ?"
-            params.append(marca_clean)
+            query = query.filter(db.func.lower(PrecioLista.marca) == marca_clean)
 
     # Filtro de Categoría
     if categoria_indicada != "Todo":
         cat_limpia = categoria_indicada.lower().strip()
-        query_base += " AND LOWER(categoria) = ?"
-        params.append(cat_limpia)
+        query = query.filter(db.func.lower(PrecioLista.categoria) == cat_limpia)
 
-    cursor.execute(f"SELECT COUNT(*) {query_base}", params)
-    total_productos = cursor.fetchone()[0]
-    total_paginas = (
-        math.ceil(total_productos / por_pagina) if total_productos > 0 else 1
-    )
+    total_productos = query.count()
+    total_paginas = math.ceil(total_productos / por_pagina) if total_productos > 0 else 1
 
-    query_final = f"SELECT id, nombre, precio, marca, fecha, categoria, tienda {query_base} ORDER BY precio ASC LIMIT ? OFFSET ?"
-    params_final = params + [por_pagina, offset]
-
-    cursor.execute(query_final, params_final)
-    productos = cursor.fetchall()
-    conexion.close()
+    productos = query.order_by(PrecioLista.precio.asc()).offset(offset).limit(por_pagina).all()
 
     return render_template(
         "productos_cards.html",
@@ -184,26 +160,62 @@ def filtrar_productos():
 # ID del producto:
 @app.route("/detalle/<int:producto_id>")
 def producto_seleccionado(producto_id):
-    conexion = sqlite3.connect("hardware_tracker.db")
-    conexion.row_factory = sqlite3.Row
-    cursor = conexion.cursor()
-
-    cursor.execute(
-        "SELECT id, nombre, precio, marca, fecha, categoria, tienda FROM precios_lista WHERE id = ?",
-        (producto_id,),
-    )
-    producto = cursor.fetchone()
-    conexion.close()
+    producto = PrecioLista.query.get(producto_id)
 
     if producto:
         return render_template("producto_detalle.html", prod=producto)
     return "<p class='text-gray-400 p-4'>Producto no encontrado</p>"
 
+# Historial de precios para el gráfico cronológico del producto
+@app.route("/producto/<int:producto_id>/historial")
+def historial_producto(producto_id):
+    try:
+        # Busca el producto actual para saber su tienda y sku_tienda
+        producto = PrecioLista.query.get(producto_id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        # Consulta el historial usando la combinación correcta
+        registros = HistorialPrecio.query.filter_by(
+            tienda=producto.tienda,
+            sku_tienda=producto.sku_tienda
+        ).order_by(HistorialPrecio.fecha_registro.asc()).all()
+        
+        # Mapea con los nombres reales de las columnas
+        fechas = [r.fecha_registro.strftime("%Y-%m-%d %H:%M") for r in registros]
+        precios = [r.precio for r in registros]
+        
+        return jsonify({"fechas": fechas, "precios": precios})
+    except Exception as e:
+        print(f"ERROR EN HISTORIAL: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Buscador:
+@app.route('/api/search')
+def api_search():
+    try:
+        query = request.args.get('q', '').strip()
+        results = []
+        
+        if query:
+            productos = PrecioLista.query.filter(PrecioLista.nombre.ilike(f"%{query}%")).limit(10).all()
+            for p in productos:
+                results.append({
+                    "tienda": p.tienda,
+                    "nombre": p.nombre,
+                    "precio": p.precio,
+                    "link": p.link
+                })
+                
+        return jsonify(results)
+    except Exception as e:
+        print(f"ERROR EN API SEARCH: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 # Vaciar. No funcionaba el htmx para cerrar ventana individual así que para eso está sencilla función.
 @app.route("/vaciar")
 def vaciar_detalle():
     return ""
 
-
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", debug=True, port=5000)
