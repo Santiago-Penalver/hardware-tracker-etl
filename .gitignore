@@ -6,6 +6,7 @@ env/
 # Caché de Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Bases de datos locales
 *.db
@@ -22,9 +23,9 @@ __pycache__/
 # Archivos temporales de sistema (Windows / Mac)
 Thumbs.db
 .DS_Store
+app.log
 
 # Scripts de prueba y auditoría local
-audit_words.py
-test_compragamer.py
-audit_db.py
-bkp.py
+json_download/
+local/
+legacy/

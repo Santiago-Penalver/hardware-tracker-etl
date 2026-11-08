@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+.pytest_cache/
+.vscode/
+.git/
+env/
+.env
+app.log
+*.log
+hardware_tracker_db
+json_download/
+legacy/
+local/
